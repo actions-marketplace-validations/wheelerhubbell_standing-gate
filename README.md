@@ -24,3 +24,33 @@ Paid doors can charge for an evaluation even when the gate blocks. Payment does 
 A successful mock run reports `DRY_RUN_PASSED` without a record hash. Live mode currently exits unsuccessfully rather than issuing clearance.
 
 Source: Wheeler Hubbell Publishing's fixed action at commit `5ef7c68484436c4d68d254142e0905314274217f`.
+## Install and use
+
+Add this to a workflow under `.github/workflows/`:
+
+```yaml
+name: Standing structural dry run
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check structure without granting execution permission
+        id: standing
+        uses: wheelerhubbell/standing-gate@75fcd7506b248922561a540565ba5ba4ed1af357
+        with:
+          door: /v1/evaluate
+          mock: 'true'
+```
+
+The commit is pinned to the v0.1.0 implementation. The action sets up Node.js 22. It does not require a repository checkout. A successful mock run outputs `determination=DRY_RUN_PASSED` and an empty `record_hash`. That result must not be treated as deployment permission. Do not use mock success to authorize a release.
+
+Live mode is the default. It currently fails rather than providing clearance. A paid service request can still charge even if the action fails. Do not provide `payment_signature` unless you separately authorize that service charge.
+
+## Data sent to the service
+
+This implementation sends the supplied subject and claim, repository name, commit SHA, ref, GitHub actor identifier, and request timestamp to the selected service URL. If you supply `payment_signature`, it is sent to that same service in both the `PAYMENT-SIGNATURE` and `Authorization` headers. Do not put secrets in subject or claim, and do not supply a payment token to a service you do not trust. Mock mode still sends a request with this information; it is not an offline check.
+
+The destination defaults to `https://standing-guard-service.lovable.app`. Service-side privacy, retention, and payment terms are separate from this action's implementation.
