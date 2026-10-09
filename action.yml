@@ -1,0 +1,96 @@
+name: 'Standing Gate'
+description: 'Checks standing-record integrity and blocks live execution when current standing or permission cannot be verified.'
+author: 'wheelerhubbell'
+branding:
+  icon: 'shield'
+  color: 'blue'
+inputs:
+  service_url:
+    description: 'Standing Witness service base URL'
+    required: false
+    default: 'https://standing-guard-service.lovable.app'
+  door:
+    description: 'Door endpoint to evaluate against (/v1/audit, /v1/evaluate, /v1/ping)'
+    required: false
+    default: '/v1/audit'
+  subject:
+    description: 'Subject identifier or repository claim'
+    required: false
+    default: '${{ github.repository }}@${{ github.sha }}'
+  claim:
+    description: 'Claim to verify or audit'
+    required: false
+    default: 'CI/CD pipeline release integrity verification'
+  mock:
+    description: 'Set to "true" for free dry-run structural verification'
+    required: false
+    default: 'false'
+  payment_signature:
+    description: 'x402 PAYMENT-SIGNATURE or authorization token for paid doors'
+    required: false
+    default: ''
+outputs:
+  determination:
+    description: 'Evaluation determination outcome'
+    value: ${{ steps.gate.outputs.outcome }}
+  record_hash:
+    description: 'Cryptographic hash of the signed evaluation record'
+    value: ${{ steps.gate.outputs.hash }}
+
+runs:
+  using: 'composite'
+  steps:
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      with:
+        node-version: '22'
+    - id: gate
+      shell: bash
+      env:
+        WHP_URL: ${{ inputs.service_url }}
+        WHP_DOOR: ${{ inputs.door }}
+        WHP_SUBJECT: ${{ inputs.subject }}
+        WHP_CLAIM: ${{ inputs.claim }}
+        WHP_MOCK: ${{ inputs.mock }}
+        WHP_PAYMENT: ${{ inputs.payment_signature }}
+        WHP_REPOSITORY: ${{ github.repository }}
+        WHP_SHA: ${{ github.sha }}
+        WHP_REF: ${{ github.ref }}
+        WHP_ACTOR: ${{ github.actor }}
+      run: |
+        node <<'NODE'
+        const {createHash,createPublicKey,verify}=require('node:crypto');
+        const fs=require('node:fs');
+        function canonical(v){
+         if(v===null||typeof v==='boolean'||typeof v==='string')return JSON.stringify(v);
+         if(typeof v==='number'&&Number.isSafeInteger(v)&&!Object.is(v,-0))return String(v);
+         if(Array.isArray(v))return '['+v.map(canonical).join(',')+']';
+         if(v&&typeof v==='object')return '{'+Object.keys(v).sort((a,b)=>{const x=Array.from(a,c=>c.codePointAt(0)),y=Array.from(b,c=>c.codePointAt(0));for(let i=0;i<Math.min(x.length,y.length);i++)if(x[i]!==y[i])return x[i]-y[i];return x.length-y.length;}).map(k=>JSON.stringify(k)+':'+canonical(v[k])).join(',')+'}';
+         throw Error('Unsupported canonical value');
+        }
+        function decode(v,size){if(typeof v!=='string'||!/^[A-Za-z0-9_-]+$/.test(v))throw Error('Invalid signature encoding');const b=Buffer.from(v,'base64url');if(b.length!==size||b.toString('base64url')!==v)throw Error('Invalid signature encoding');return b;}
+        async function run(){
+         const origin=new URL(process.env.WHP_URL);if(origin.protocol!=='https:'||origin.username||origin.password)throw Error('HTTPS service required');
+         const door=process.env.WHP_DOOR;if(!['/v1/evaluate','/v1/audit','/v1/ping'].includes(door))throw Error('Unsupported ordinary door');
+         const mock=process.env.WHP_MOCK==='true';
+         const input={subject:process.env.WHP_SUBJECT,claim:process.env.WHP_CLAIM,provenance:{source:'github-actions',authority:'repository-workflow',evidence:[{repository:process.env.WHP_REPOSITORY,sha:process.env.WHP_SHA,ref:process.env.WHP_REF,actor:process.env.WHP_ACTOR,timestamp:new Date().toISOString()}]}};
+         const headers={'Content-Type':'application/json'};if(mock)headers['X-Mock']='true';if(process.env.WHP_PAYMENT){headers['PAYMENT-SIGNATURE']=process.env.WHP_PAYMENT;headers.Authorization='Bearer '+process.env.WHP_PAYMENT;}
+         const response=await fetch(new URL(door,origin),{method:'POST',headers,body:JSON.stringify(input),redirect:'error',signal:AbortSignal.timeout(20000)});
+         if(response.status!==200)throw Error('HTTP '+response.status);
+         const data=await response.json();
+         if(mock){if((data?.mock!==true&&data?.not_a_determination!==true)||data.structurally_complete!==true||!Array.isArray(data.failed)||data.failed.length||data.error)throw Error('Malformed or failed requested mock');console.log('DRY_RUN_PASSED: non-authorizing structural check');fs.appendFileSync(process.env.GITHUB_OUTPUT,'outcome=DRY_RUN_PASSED\nhash=\n');return;}
+         if(!data||data.mock===true||data.not_a_determination===true||data.type==='WHP-MOCK-DRY-RUN-v1'||data.error)throw Error('Unexpected mock/test/error');
+         const discovery=await fetch(new URL('/v1/evaluate',origin),{cache:'no-store',redirect:'error',signal:AbortSignal.timeout(20000)});if(discovery.status!==200)throw Error('Signing-key discovery unavailable');
+         const advertised=await discovery.json();const key=advertised?.signer?.public_key_b64url;if(advertised?.signer?.alg!=='Ed25519')throw Error('Published signing key unavailable');
+         const record=data.record,sig=data.signature;if(!record||record.type!=='WHP-FRONTDOOR-EVALUATION-v1'||record.not_sealed_mark!==true)throw Error('Unexpected record type');
+         if(record.mock===true||record.not_a_determination===true||record.environment==='TEST')throw Error('Mock/test record');
+         if(sig?.alg!=='Ed25519'||sig.public_key_b64url!==key)throw Error('Missing signature or signing key mismatch');
+         const bytes=Buffer.from(canonical(record));if(createHash('sha256').update(bytes).digest('hex')!==data.record_hash)throw Error('Record hash mismatch');
+         const pk=createPublicKey({key:Buffer.concat([Buffer.from('302a300506032b6570032100','hex'),decode(key,32)]),format:'der',type:'spki'});if(!verify(null,bytes,pk,decode(sig.value_b64url,64)))throw Error('Invalid signature');
+         const now=Math.floor(Date.now()/1000);if(!Number.isSafeInteger(record.issued_at)||!Number.isSafeInteger(record.valid_until)||record.issued_at>now||record.valid_until<=now||record.valid_until<=record.issued_at||now-record.issued_at>120)throw Error('Stale or invalid issuance window');
+         if(canonical(record.input)!==canonical(input)||createHash('sha256').update(canonical(input)).digest('hex')!==record.input_hash)throw Error('Exact request binding mismatch');
+         if(record.revoked===true||record.status==='REVOKED')throw Error('Revoked record');
+         if(!['RECOGNIZED WITH BOUNDARIES','ESTABLISHED'].includes(record.determination?.outcome))throw Error('Non-positive determination');
+         throw Error('Signed record integrity verified, but current standing and execution permission are not establishable under the ordinary front-door interface');
+        }
+        run().catch(()=>{console.error('BLOCKED: ordinary records cannot establish current standing or execution permission, or integrity checks failed');process.exitCode=1;});
+        NODE
