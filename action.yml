@@ -12,7 +12,7 @@ inputs:
   door:
     description: 'Door endpoint to evaluate against (/v1/audit, /v1/evaluate, /v1/ping)'
     required: false
-    default: '/v1/audit'
+    default: '/v1/evaluate'
   subject:
     description: 'Subject identifier or repository claim'
     required: false
