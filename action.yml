@@ -1,5 +1,5 @@
 name: 'Standing Gate'
-description: 'Checks standing-record integrity and validates cryptographic signatures from Wheeler Hubbell Publishing.'
+description: 'Autonomous Decision Integrity circuit breaker: evaluates claims, authority, and provenance against WHP epistemic reasoning.'
 author: 'wheelerhubbell'
 branding:
   icon: 'shield'
