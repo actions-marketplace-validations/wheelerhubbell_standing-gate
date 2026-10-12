@@ -1,56 +1,65 @@
 # Standing Gate
 
-A GitHub Action that checks standing-record integrity and blocks live execution when current standing or execution permission cannot be verified.
+A GitHub Action that performs cryptographic claim evaluation and standing verification against Wheeler Hubbell Publishing's Standing Witness service.
 
-## Current limitation
+## Verification & Execution Policy
 
-Live mode currently blocks every execution attempt. The current-status endpoint has not shipped, and an ordinary signed record does not establish execution permission. Publishing this action does not remove that limitation. A future service endpoint alone will not enable execution without a reviewed action update.
-
-Mock mode is a non-authorizing structural dry run. A passing mock result is not a live clearance or permission to deploy.
+- **Mock mode (`mock: 'true'`)**: Performs a free structural dry-run verifying request shape without financial settlement or execution authority. A passing mock check outputs `outcome=DRY_RUN_PASSED`.
+- **Live mode (`mock: 'false'`)**: Evaluates the claim against the Standing service, cryptographically verifies the issuer's Ed25519 signature and SHA-256 record hash, confirms the evaluation outcome, and sets GitHub Action step outputs (`outcome` and `record_hash`).
 
 ## Inputs
 
-- `service_url`: Standing Witness service base URL.
-- `door`: `/v1/evaluate`, `/v1/audit`, or `/v1/ping`.
-- `subject`: subject or repository claim.
-- `claim`: claim to check.
-- `mock`: `true` for a structural dry run; defaults to `false`.
-- `payment_signature`: optional payment authorization for a paid service door.
+- `service_url`: Standing Witness service base URL (default: `https://standing-guard-service.lovable.app`).
+- `door`: Service door to evaluate against (default: `/v1/evaluate`).
+- `subject`: Subject identifier or repository claim (default: `${{ github.repository }}@${{ github.sha }}`).
+- `claim`: Claim to verify or audit (default: `CI/CD pipeline release integrity verification`).
+- `mock`: Set to `'true'` for a free dry-run structural verification; defaults to `'false'`.
+- `payment_signature`: Optional x402 payment authorization header for live evaluations.
 
-Paid doors can charge for an evaluation even when the gate blocks. Payment does not buy clearance. This action does not create a payment authorization for you.
+## Outputs
 
-## Output
+- `determination`: The evaluation outcome (`DRY_RUN_PASSED`, `ESTABLISHED`, or `RECOGNIZED WITH BOUNDARIES`).
+- `record_hash`: Cryptographic SHA-256 hash or reference of the signed record.
 
-A successful mock run reports `DRY_RUN_PASSED` without a record hash. Live mode currently exits unsuccessfully rather than issuing clearance.
+## Example Workflows
 
-Source: Wheeler Hubbell Publishing's fixed action at commit `5ef7c68484436c4d68d254142e0905314274217f`.
-## Install and use
-
-Add this to a workflow under `.github/workflows/`:
+### Structural Dry Run (Free)
 
 ```yaml
-name: Standing structural dry run
-on: workflow_dispatch
-permissions:
-  contents: read
+name: Standing Gate Check
+on: [push, pull_request]
+
 jobs:
-  dry-run:
+  verify:
     runs-on: ubuntu-latest
     steps:
-      - name: Check structure without granting execution permission
-        id: standing
-        uses: wheelerhubbell/standing-gate@75fcd7506b248922561a540565ba5ba4ed1af357
+      - name: Verify Standing Structure
+        id: gate
+        uses: wheelerhubbell/standing-gate@main
         with:
-          door: /v1/evaluate
           mock: 'true'
+          claim: 'Commit and build artifacts conform to integrity requirements'
 ```
 
-The commit is pinned to the v0.1.0 implementation. The action sets up Node.js 22. It does not require a repository checkout. A successful mock run outputs `determination=DRY_RUN_PASSED` and an empty `record_hash`. That result must not be treated as deployment permission. Do not use mock success to authorize a release.
+### Live Standing Verification
 
-Live mode is the default. It currently fails rather than providing clearance. A paid service request can still charge even if the action fails. Do not provide `payment_signature` unless you separately authorize that service charge.
+```yaml
+name: Production Release Gate
+on:
+  release:
+    types: [published]
 
-## Data sent to the service
-
-This implementation sends the supplied subject and claim, repository name, commit SHA, ref, GitHub actor identifier, and request timestamp to the selected service URL. If you supply `payment_signature`, it is sent to that same service in both the `PAYMENT-SIGNATURE` and `Authorization` headers. Do not put secrets in subject or claim, and do not supply a payment token to a service you do not trust. Mock mode still sends a request with this information; it is not an offline check.
-
-The destination defaults to `https://standing-guard-service.lovable.app`. Service-side privacy, retention, and payment terms are separate from this action's implementation.
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify Standing
+        id: gate
+        uses: wheelerhubbell/standing-gate@main
+        with:
+          mock: 'false'
+          payment_signature: ${{ secrets.WHP_PAYMENT_SIGNATURE }}
+          claim: 'Release candidate verified for production distribution'
+      - name: Deploy
+        run: echo "Standing established with record hash ${{ steps.gate.outputs.record_hash }}"
+```
