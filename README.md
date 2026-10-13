@@ -115,3 +115,18 @@ jobs:
 - **Canonical Admission & Schemas**: `https://standing-guard-service.lovable.app/v1/ordinary/contract.json`
 - **Root Verifier**: `https://standing-guard-service.lovable.app/v1/ordinary/verify_ordinary.mjs`
 - **Documentation & Research**: [Wheeler Hubbell Publishing](https://github.com/wheelerhubbell/wheelerhubbell.github.io)
+
+
+### Canonical Epistemic Objects & Evaluation Tiers
+
+WHP Standing names tiers by the **epistemic object and scope of work**, not by API submission mechanics. The identical evidentiary standard applies across every tier; price reflects workload complexity, never the outcome:
+
+| Tier | Price | Evaluated Object & Scope | Route |
+| :--- | :--- | :--- | :--- |
+| **Proposition** | 0.10 USDC | One atomic assertion, bounded question, or standalone tool output. | `/v1/ping` |
+| **Claim** | 1.00 USDC | A structured claim with qualifiers, standing, temporal bounds, and supporting evidence. | `/v1/evaluate` |
+| **Qualification Update** | 1.00 USDC | Scope or qualifier modification evaluated against existing standing record. | `/v1/patch` |
+| **Evidence Graph** | 2.00 USDC | Interdependent claims, multiple sources, actors, authorities, and state transitions. | `/v1/audit` |
+| **Dossier** | Quote-based | Comprehensive document corpus or multi-page evidentiary bundle. | `/v1/evaluations` |
+
+**Decision Integrity Invariant**: Payment purchases deterministic evaluation under published rules—never a favorable Mark, an `ESTABLISHED` result, or a predetermined conclusion. If evidence is insufficient, an Ed25519-signed `NOT_ESTABLISHED` Assessment is produced, and Standing Gate fails closed.
