@@ -73,9 +73,10 @@ async function run() {
     'Content-Type': 'application/json'
   };
   if (mock) headers['X-Mock'] = 'true';
-  if (process.env.WHP_PAYMENT) {
-    headers['PAYMENT-SIGNATURE'] = process.env.WHP_PAYMENT;
-    headers['Authorization'] = 'Bearer ' + process.env.WHP_PAYMENT;
+  const payment = process.env.WHP_PAYMENT || process.env.WHP_PAYMENT_KEY || '';
+  if (payment) {
+    headers['PAYMENT-SIGNATURE'] = payment;
+    headers['Authorization'] = 'Bearer ' + payment;
   }
 
   const response = await fetch(new URL(door, origin), {
@@ -86,11 +87,14 @@ async function run() {
     signal: AbortSignal.timeout(20000)
   });
 
-  if (response.status === 402 && !process.env.WHP_PAYMENT) {
+  if (response.status === 402 && !payment) {
     const terms = await response.json().catch(() => ({}));
-    console.error('PAYMENT_REQUIRED: Paid door requires x402 payment authorization');
+    console.error('PAYMENT_REQUIRED: Paid door requires x402 payment authorization (1 USDC on Base or prepaid developer credits)');
     if (terms.accepts) {
       console.error('Accepts:', JSON.stringify(terms.accepts, null, 2));
+    }
+    if (mock) {
+      console.error('NOTE: Mock/dry-run bypass is discontinued in production in accordance with Decision Integrity Protocol v1.0. Supply WHP_PAYMENT_KEY or payment_signature for live evaluation.');
     }
     throw Error('Payment required (402)');
   }
