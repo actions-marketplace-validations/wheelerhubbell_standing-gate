@@ -51,7 +51,7 @@ runs:
         WHP_SUBJECT: ${{ inputs.subject }}
         WHP_CLAIM: ${{ inputs.claim }}
         WHP_MOCK: ${{ inputs.mock }}
-        WHP_PAYMENT: ${{ inputs.payment_signature }}
+        WHP_PAYMENT: ${{ inputs.payment_signature || env.WHP_PAYMENT_KEY || env.WHP_PAYMENT }}
         WHP_REPOSITORY: ${{ github.repository }}
         WHP_SHA: ${{ github.sha }}
         WHP_REF: ${{ github.ref }}
@@ -83,6 +83,7 @@ runs:
         }
 
         function parseSpki(pubKeyInput) {
+          // Can be base64 DER SPKI, base64url raw 32-byte Ed25519, or hex
           if (typeof pubKeyInput !== 'string') throw Error('Invalid public key format');
           const trimmed = pubKeyInput.trim();
           if (trimmed.length === 64 && /^[0-9a-fA-F]+$/.test(trimmed)) {
@@ -132,9 +133,10 @@ runs:
             'Content-Type': 'application/json'
           };
           if (mock) headers['X-Mock'] = 'true';
-          if (process.env.WHP_PAYMENT) {
-            headers['PAYMENT-SIGNATURE'] = process.env.WHP_PAYMENT;
-            headers['Authorization'] = 'Bearer ' + process.env.WHP_PAYMENT;
+          const payment = process.env.WHP_PAYMENT || process.env.WHP_PAYMENT_KEY || '';
+          if (payment) {
+            headers['PAYMENT-SIGNATURE'] = payment;
+            headers['Authorization'] = 'Bearer ' + payment;
           }
 
           const response = await fetch(new URL(door, origin), {
@@ -145,11 +147,14 @@ runs:
             signal: AbortSignal.timeout(20000)
           });
 
-          if (response.status === 402 && !process.env.WHP_PAYMENT) {
+          if (response.status === 402 && !payment) {
             const terms = await response.json().catch(() => ({}));
-            console.error('PAYMENT_REQUIRED: Paid door requires x402 payment authorization');
+            console.error('PAYMENT_REQUIRED: Paid door requires x402 payment authorization (1 USDC on Base or prepaid developer credits)');
             if (terms.accepts) {
               console.error('Accepts:', JSON.stringify(terms.accepts, null, 2));
+            }
+            if (mock) {
+              console.error('NOTE: Mock/dry-run bypass is discontinued in production in accordance with Decision Integrity Protocol v1.0. Supply WHP_PAYMENT_KEY or payment_signature for live evaluation.');
             }
             throw Error('Payment required (402)');
           }
@@ -159,6 +164,7 @@ runs:
 
           const data = await response.json();
 
+          // Mock handling
           if (mock) {
             if ((data?.mock !== true && data?.not_a_determination !== true) || data.structurally_complete !== true) {
               throw Error('Malformed or failed requested mock check');
@@ -170,6 +176,7 @@ runs:
             return;
           }
 
+          // Key discovery
           let signingKeyObj = null;
           const discResp = await fetch(new URL('/v1/evaluate', origin), {
             headers: { 'User-Agent': 'Mozilla/5.0' },
@@ -194,6 +201,7 @@ runs:
             }
           }
 
+          // Format 1: WHP-FRONTDOOR-EVALUATION-v1
           if (data.record && data.signature) {
             const { record, signature, record_hash } = data;
             if (record.type !== 'WHP-FRONTDOOR-EVALUATION-v1') throw Error('Unexpected record type: ' + record.type);
@@ -223,6 +231,7 @@ runs:
             return;
           }
 
+          // Format 2: Sealed WHP-STANDING-MARK-v2 / WHP-STANDING-RESULT-v2
           if (data.protected && data.payload && data.signature) {
             const envelope = data;
             const kind = envelope.protected.type;
