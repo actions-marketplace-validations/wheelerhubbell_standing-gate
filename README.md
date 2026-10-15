@@ -13,6 +13,49 @@ Where traditional CI gates only check binary tool exit codes or static checksums
 
 ---
 
+---
+
+## Universal Machine Interfaces
+
+Standing Gate and the Wheeler Hubbell Publishing Standing Witness engine are exposed via three sovereign machine interfaces:
+
+### 1. Model Context Protocol (MCP) Server
+Any autonomous agent runtime (Claude Desktop, Cursor, LangChain, AutoGen, CrewAI) can connect directly to the live MCP endpoint:
+```json
+{
+  "mcpServers": {
+    "whp-standing": {
+      "url": "https://standing-guard-service.lovable.app/mcp"
+    }
+  }
+}
+```
+**Advertised Tools:**
+- `whp_standing_contract`: Returns the active epistemic contract, criteria, bounds, and settlement terms.
+- `whp_standing_evaluation`: Requests an evaluation envelope (returns HTTP 402 terms on initial call, evaluates upon payment signature submission).
+- `whp_standing_result`: Retrieves original signed attestation or negative assessment records.
+
+### 2. Standalone TypeScript/Node Client
+Install directly into any project or agent runner:
+```bash
+npm install github:wheelerhubbell/agentkit#feat/standing-witness
+```
+Use as a pre-flight circuit breaker before committing any critical action:
+```typescript
+import { StandingWitnessActionProvider } from "@wheelerhubbell/agentkit";
+```
+
+### 3. GitHub Actions CI/CD Circuit Breaker
+Drop into any CI/CD pipeline:
+```yaml
+- name: Epistemic Standing Check
+  uses: wheelerhubbell/standing-gate@v0
+  with:
+    subject: "${{ github.repository }}@${{ github.sha }}"
+    claim: "Commit changes adhere strictly to repository invariants"
+    buyer_key: ${{ secrets.WHP_BUYER_KEY }}
+```
+
 ## Why Epistemic Grounding?
 
 In autonomous systems and agent-to-agent (A2A) pipelines, unverified claims cause catastrophic cascading failures, hallucinations, and epistemic trespassing. 
