@@ -1,56 +1,175 @@
 # Standing Gate
 
-A GitHub Action that checks standing-record integrity and blocks live execution when current standing or execution permission cannot be verified.
+> **Autonomous Epistemic Evaluation & Decision Integrity Circuit Breaker**  
+> Direct integration with Wheeler Hubbell Publishing's machine-verifiable Standing Witness protocol.
 
-## Current limitation
+[![GitHub Marketplace](https://img.shields.io/badge/Marketplace-Standing%20Gate-blue?logo=github)](https://github.com/marketplace/actions/standing-gate)
+[![x402 Payment](https://img.shields.io/badge/x402-USDC%20on%20Base-green)](https://standing-guard-service.lovable.app/v1/contract)
+[![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-blue)](https://standing-guard-service.lovable.app/mcp)
 
-Live mode currently blocks every execution attempt. The current-status endpoint has not shipped, and an ordinary signed record does not establish execution permission. Publishing this action does not remove that limitation. A future service endpoint alone will not enable execution without a reviewed action update.
+Standing Gate is **not a static notary or signature stamp**. It is an active epistemic evaluation pipeline designed for autonomous agents, automated workflows, and release gates. 
 
-Mock mode is a non-authorizing structural dry run. A passing mock result is not a live clearance or permission to deploy.
+Where traditional CI gates only check binary tool exit codes or static checksums, Standing Gate submits claims, evidence, authority bounds, and provenance to Wheeler Hubbell Publishing's reasoning environment (`/v1/evaluate`). The engine deterministically evaluates whether the asserted state is grounded in truth and authorized by admitted warrants—issuing an Ed25519-signed **Standing Mark** (`ESTABLISHED`) or a fail-closed **Standing Assessment** (`NOT_ESTABLISHED`) with explicit blocking unknowns.
+
+---
+
+---
+
+## Universal Machine Interfaces
+
+Standing Gate and the Wheeler Hubbell Publishing Standing Witness engine are exposed via three sovereign machine interfaces:
+
+### 1. Model Context Protocol (MCP) Server
+Any autonomous agent runtime (Claude Desktop, Cursor, LangChain, AutoGen, CrewAI) can connect directly to the live MCP endpoint:
+```json
+{
+  "mcpServers": {
+    "whp-standing": {
+      "url": "https://standing-guard-service.lovable.app/mcp"
+    }
+  }
+}
+```
+**Advertised Tools:**
+- `whp_standing_contract`: Returns the active epistemic contract, criteria, bounds, and settlement terms.
+- `whp_standing_evaluation`: Requests an evaluation envelope (returns HTTP 402 terms on initial call, evaluates upon payment signature submission).
+- `whp_standing_result`: Retrieves original signed attestation or negative assessment records.
+
+### 2. Standalone TypeScript/Node Client
+Install directly into any project or agent runner:
+```bash
+npm install github:wheelerhubbell/agentkit#feat/standing-witness
+```
+Use as a pre-flight circuit breaker before committing any critical action:
+```typescript
+import { StandingWitnessActionProvider } from "@wheelerhubbell/agentkit";
+```
+
+### 3. GitHub Actions CI/CD Circuit Breaker
+Drop into any CI/CD pipeline:
+```yaml
+- name: Epistemic Standing Check
+  uses: wheelerhubbell/standing-gate@v0
+  with:
+    subject: "${{ github.repository }}@${{ github.sha }}"
+    claim: "Commit changes adhere strictly to repository invariants"
+    buyer_key: ${{ secrets.WHP_BUYER_KEY }}
+```
+
+## Why Epistemic Grounding?
+
+In autonomous systems and agent-to-agent (A2A) pipelines, unverified claims cause catastrophic cascading failures, hallucinations, and epistemic trespassing. 
+
+- **Authority over Assertion**: A claim is never admitted simply because an agent or script asserts it. Evidence, qualifiers, and authority are evaluated simultaneously under formal epistemic bounds (*The Elemental Properties of True*).
+- **Fail-Closed by Design**: If provenance is broken, qualifiers are omitted, or evidence is insufficient, evaluation fails closed to `NOT_ESTABLISHED`. Unknowns remain explicitly unknown.
+- **Independent Machine Verification**: Results are cryptographically signed using Ed25519 and verifiable offline against canonical root admission and admission schemas.
+- **Autonomous Settlement**: Uses the **x402** protocol (gasless EIP-3009 micro-settlements in USDC on Base) for autonomous machine-to-machine evaluation, or prepaid developer tokens.
+
+---
+
+## Evaluation Outcomes & Policy
+
+| Outcome | Meaning | Action Behavior |
+| :--- | :--- | :--- |
+| **`ESTABLISHED`** | Standing Mark issued. The claim is warranted, bounded, and verified against admitted authority. | Step succeeds (`outcome=ESTABLISHED`). Downstream actions/deployments proceed. |
+| **`NOT_ESTABLISHED`** | Standing Assessment issued. The claim lacks sufficient grounding, exceeds bounds, or contains blocking unknowns. | Step fails closed (`outcome=NOT_ESTABLISHED`), halting downstream execution. |
+| **`DRY_RUN_PASSED`** | Free structural dry-run (`mock: 'true'`). Validates payload shape and schema without financial settlement or execution authority. | Step succeeds for schema verification (`outcome=DRY_RUN_PASSED`). |
+
+---
 
 ## Inputs
 
-- `service_url`: Standing Witness service base URL.
-- `door`: `/v1/evaluate`, `/v1/audit`, or `/v1/ping`.
-- `subject`: subject or repository claim.
-- `claim`: claim to check.
-- `mock`: `true` for a structural dry run; defaults to `false`.
-- `payment_signature`: optional payment authorization for a paid service door.
+| Input | Description | Default |
+| :--- | :--- | :--- |
+| `service_url` | Base URL of the Standing Witness service | `https://standing-guard-service.lovable.app` |
+| `door` | Service evaluation endpoint | `/v1/evaluate` |
+| `subject` | Subject identifier, repository, or agent actor | `${{ github.repository }}@${{ github.sha }}` |
+| `claim` | Concrete factual claim to evaluate against admitted evidence | `CI/CD pipeline release integrity verification` |
+| `mock` | Set to `'true'` for free structural dry-run (zero-cost schema testing) | `'false'` |
+| `payment_signature` | x402 payment authorization header or prepaid bearer token (`whp_...`) for live evaluation | `''` |
 
-Paid doors can charge for an evaluation even when the gate blocks. Payment does not buy clearance. This action does not create a payment authorization for you.
+## Outputs
 
-## Output
+| Output | Description |
+| :--- | :--- |
+| `determination` | The evaluation outcome (`ESTABLISHED`, `NOT_ESTABLISHED`, or `DRY_RUN_PASSED`) |
+| `record_hash` | Cryptographic SHA-256 hash or reference of the signed evaluation record |
 
-A successful mock run reports `DRY_RUN_PASSED` without a record hash. Live mode currently exits unsuccessfully rather than issuing clearance.
+---
 
-Source: Wheeler Hubbell Publishing's fixed action at commit `5ef7c68484436c4d68d254142e0905314274217f`.
-## Install and use
+## Example Workflows
 
-Add this to a workflow under `.github/workflows/`:
+### 1. Epistemic Circuit Breaker for Production Releases (Live)
+
+Enforce that a release candidate or autonomous decision has established epistemic standing before publishing artifacts or triggering deployments:
 
 ```yaml
-name: Standing structural dry run
-on: workflow_dispatch
-permissions:
-  contents: read
+name: Epistemic Decision Gate
+on:
+  release:
+    types: [published]
+
 jobs:
-  dry-run:
+  verify-standing:
     runs-on: ubuntu-latest
     steps:
-      - name: Check structure without granting execution permission
-        id: standing
-        uses: wheelerhubbell/standing-gate@75fcd7506b248922561a540565ba5ba4ed1af357
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Evaluate Release Decision Integrity
+        id: gate
+        uses: wheelerhubbell/standing-gate@v0
         with:
-          door: /v1/evaluate
-          mock: 'true'
+          mock: 'false'
+          claim: 'Production release artifact commit hash matches signed integrity attestation'
+          payment_signature: ${{ secrets.WHP_PAYMENT_SIGNATURE }}
+
+      - name: Proceed with Distribution
+        run: |
+          echo "Standing successfully established!"
+          echo "Decision Record Hash: ${{ steps.gate.outputs.record_hash }}"
 ```
 
-The commit is pinned to the v0.1.0 implementation. The action sets up Node.js 22. It does not require a repository checkout. A successful mock run outputs `determination=DRY_RUN_PASSED` and an empty `record_hash`. That result must not be treated as deployment permission. Do not use mock success to authorize a release.
+### 2. Free Structural & Schema Check (Mock / Zero-Cost)
 
-Live mode is the default. It currently fails rather than providing clearance. A paid service request can still charge even if the action fails. Do not provide `payment_signature` unless you separately authorize that service charge.
+Verify that your pipeline's claim structure, subject identity, and provenance payload conform to WHP intake schemas without incurring settlement fees:
 
-## Data sent to the service
+```yaml
+name: Pull Request Integrity Check
+on: [pull_request]
 
-This implementation sends the supplied subject and claim, repository name, commit SHA, ref, GitHub actor identifier, and request timestamp to the selected service URL. If you supply `payment_signature`, it is sent to that same service in both the `PAYMENT-SIGNATURE` and `Authorization` headers. Do not put secrets in subject or claim, and do not supply a payment token to a service you do not trust. Mock mode still sends a request with this information; it is not an offline check.
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify Submission Structure
+        id: gate
+        uses: wheelerhubbell/standing-gate@v0
+        with:
+          mock: 'true'
+          claim: 'Pull request submission conforms to repository provenance bounds'
+```
 
-The destination defaults to `https://standing-guard-service.lovable.app`. Service-side privacy, retention, and payment terms are separate from this action's implementation.
+---
+
+## Independent Verification & Protocol Details
+
+- **Protocol Specification**: `WHP-STANDING-ORDINARY-INTAKE/1.0.0`
+- **Canonical Admission & Schemas**: `https://standing-guard-service.lovable.app/v1/ordinary/contract.json`
+- **Root Verifier**: `https://standing-guard-service.lovable.app/v1/ordinary/verify_ordinary.mjs`
+- **Documentation & Research**: [Wheeler Hubbell Publishing](https://github.com/wheelerhubbell/wheelerhubbell.github.io)
+
+
+### Canonical Epistemic Objects & Evaluation Tiers
+
+WHP Standing names tiers by the **epistemic object and scope of work**, not by API submission mechanics. The identical evidentiary standard applies across every tier; price reflects workload complexity, never the outcome:
+
+| Tier | Price | Evaluated Object & Scope | Route |
+| :--- | :--- | :--- | :--- |
+| **Proposition** | 0.10 USDC | One atomic assertion, bounded question, or standalone tool output. | `/v1/ping` |
+| **Claim** | 1.00 USDC | A structured claim with qualifiers, standing, temporal bounds, and supporting evidence. | `/v1/evaluate` |
+| **Qualification Update** | 1.00 USDC | Scope or qualifier modification evaluated against existing standing record. | `/v1/patch` |
+| **Evidence Graph** | 2.00 USDC | Interdependent claims, multiple sources, actors, authorities, and state transitions. | `/v1/audit` |
+| **Dossier** | Quote-based | Comprehensive document corpus or multi-page evidentiary bundle. | `/v1/evaluations` |
+
+**Decision Integrity Invariant**: Payment purchases deterministic evaluation under published rules—never a favorable Mark, an `ESTABLISHED` result, or a predetermined conclusion. If evidence is insufficient, an Ed25519-signed `NOT_ESTABLISHED` Assessment is produced, and Standing Gate fails closed.
