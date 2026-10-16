@@ -8,7 +8,7 @@ inputs:
   service_url:
     description: 'Standing Witness service base URL'
     required: false
-    default: 'https://standing-guard-service.lovable.app'
+    default: 'https://api.wheelerhubbellpublishing.com'
   door:
     description: 'Door endpoint to evaluate against (/v1/evaluate, /v1/audit, /v1/ping)'
     required: false
