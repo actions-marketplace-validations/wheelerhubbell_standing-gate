@@ -56,7 +56,7 @@ test('x402 standing-gate unit & regression test suite', async (t) => {
   await t.test('2. 402 Challenge Parsing & Validation', () => {
     const rawTerms = {
       x402Version: 2,
-      resource: { url: 'https://standing-guard-service.lovable.app/v1/evaluate' },
+      resource: { url: 'https://api.wheelerhubbellpublishing.com/v1/evaluate' },
       accepts: [{
         scheme: 'exact',
         network: 'eip155:8453',
@@ -94,7 +94,7 @@ test('x402 standing-gate unit & regression test suite', async (t) => {
     const payer = '0x2222222222222222222222222222222222222222';
     const terms = {
       x402Version: 2,
-      resource: { url: 'https://standing-guard-service.lovable.app/v1/evaluate' },
+      resource: { url: 'https://api.wheelerhubbellpublishing.com/v1/evaluate' },
       accepts: [{
         scheme: 'exact',
         network: 'eip155:8453',
@@ -226,7 +226,7 @@ test('x402 standing-gate unit & regression test suite', async (t) => {
         // Initial POST -> return 402 with challenge
         const terms = {
           x402Version: 2,
-          resource: { url: 'https://standing-guard-service.lovable.app/v1/evaluate' },
+          resource: { url: 'https://api.wheelerhubbellpublishing.com/v1/evaluate' },
           accepts: [{
             scheme: 'exact',
             network: 'eip155:8453',
@@ -273,7 +273,7 @@ test('x402 standing-gate unit & regression test suite', async (t) => {
 
     const result = await run({
       env: {
-        WHP_URL: 'https://standing-guard-service.lovable.app',
+        WHP_URL: 'https://api.wheelerhubbellpublishing.com',
         WHP_DOOR: '/v1/evaluate'
       },
       signer: simulatedSigner,
@@ -295,7 +295,7 @@ test('x402 standing-gate unit & regression test suite', async (t) => {
       json: async () => ({ error: 'Payment required' })
     });
     await assert.rejects(
-      () => run({ env: { WHP_URL: 'https://standing-guard-service.lovable.app' }, fetchImpl: mockFetch402 }),
+      () => run({ env: { WHP_URL: 'https://api.wheelerhubbellpublishing.com' }, fetchImpl: mockFetch402 }),
       /Payment required \(402\)/
     );
 
@@ -328,7 +328,7 @@ test('x402 standing-gate unit & regression test suite', async (t) => {
 
     await assert.rejects(
       () => run({
-        env: { WHP_URL: 'https://standing-guard-service.lovable.app' },
+        env: { WHP_URL: 'https://api.wheelerhubbellpublishing.com' },
         signer: simulatedSigner,
         fetchImpl: mockFetchReject
       }),
