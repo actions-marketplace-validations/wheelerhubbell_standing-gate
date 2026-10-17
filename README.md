@@ -4,8 +4,8 @@
 > Direct integration with Wheeler Hubbell Publishing's machine-verifiable Standing Witness protocol.
 
 [![GitHub Marketplace](https://img.shields.io/badge/Marketplace-Standing%20Gate-blue?logo=github)](https://github.com/marketplace/actions/standing-gate)
-[![x402 Payment](https://img.shields.io/badge/x402-USDC%20on%20Base-green)](https://standing-guard-service.lovable.app/v1/contract)
-[![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-blue)](https://standing-guard-service.lovable.app/mcp)
+[![x402 Payment](https://img.shields.io/badge/x402-USDC%20on%20Base-green)](https://api.wheelerhubbellpublishing.com/v1/contract)
+[![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-blue)](https://api.wheelerhubbellpublishing.com/mcp)
 
 Standing Gate is **not a static notary or signature stamp**. It is an active epistemic evaluation pipeline designed for autonomous agents, automated workflows, and release gates. 
 
@@ -25,7 +25,7 @@ Any autonomous agent runtime (Claude Desktop, Cursor, LangChain, AutoGen, CrewAI
 {
   "mcpServers": {
     "whp-standing": {
-      "url": "https://standing-guard-service.lovable.app/mcp"
+      "url": "https://api.wheelerhubbellpublishing.com/mcp"
     }
   }
 }
@@ -81,7 +81,7 @@ In autonomous systems and agent-to-agent (A2A) pipelines, unverified claims caus
 
 | Input | Description | Default |
 | :--- | :--- | :--- |
-| `service_url` | Base URL of the Standing Witness service | `https://standing-guard-service.lovable.app` |
+| `service_url` | Base URL of the Standing Witness service | `https://api.wheelerhubbellpublishing.com` |
 | `door` | Service evaluation endpoint | `/v1/evaluate` |
 | `subject` | Subject identifier, repository, or agent actor | `${{ github.repository }}@${{ github.sha }}` |
 | `claim` | Concrete factual claim to evaluate against admitted evidence | `CI/CD pipeline release integrity verification` |
@@ -155,8 +155,8 @@ jobs:
 ## Independent Verification & Protocol Details
 
 - **Protocol Specification**: `WHP-STANDING-ORDINARY-INTAKE/1.0.0`
-- **Canonical Admission & Schemas**: `https://standing-guard-service.lovable.app/v1/ordinary/contract.json`
-- **Root Verifier**: `https://standing-guard-service.lovable.app/v1/ordinary/verify_ordinary.mjs`
+- **Canonical Admission & Schemas**: `https://api.wheelerhubbellpublishing.com/v1/ordinary/contract.json`
+- **Root Verifier**: `https://api.wheelerhubbellpublishing.com/v1/ordinary/verify_ordinary.mjs`
 - **Documentation & Research**: [Wheeler Hubbell Publishing](https://github.com/wheelerhubbell/wheelerhubbell.github.io)
 
 
