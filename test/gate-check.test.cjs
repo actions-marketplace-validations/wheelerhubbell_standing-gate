@@ -56,7 +56,7 @@ test('x402 standing-gate unit & regression test suite', async (t) => {
   await t.test('2. 402 Challenge Parsing & Validation', () => {
     const rawTerms = {
       x402Version: 2,
-      resource: { url: 'https://standing-guard-service.lovable.app/v1/evaluate' },
+      resource: { url: 'https://api.wheelerhubbellpublishing.com/v1/evaluate' },
       accepts: [{
         scheme: 'exact',
         network: 'eip155:8453',
@@ -94,7 +94,7 @@ test('x402 standing-gate unit & regression test suite', async (t) => {
     const payer = '0x2222222222222222222222222222222222222222';
     const terms = {
       x402Version: 2,
-      resource: { url: 'https://standing-guard-service.lovable.app/v1/evaluate' },
+      resource: { url: 'https://api.wheelerhubbellpublishing.com/v1/evaluate' },
       accepts: [{
         scheme: 'exact',
         network: 'eip155:8453',
@@ -226,7 +226,7 @@ test('x402 standing-gate unit & regression test suite', async (t) => {
         // Initial POST -> return 402 with challenge
         const terms = {
           x402Version: 2,
-          resource: { url: 'https://standing-guard-service.lovable.app/v1/evaluate' },
+          resource: { url: 'https://api.wheelerhubbellpublishing.com/v1/evaluate' },
           accepts: [{
             scheme: 'exact',
             network: 'eip155:8453',
@@ -273,9 +273,10 @@ test('x402 standing-gate unit & regression test suite', async (t) => {
 
     const result = await run({
       env: {
-        WHP_URL: 'https://standing-guard-service.lovable.app',
+        WHP_URL: 'https://api.wheelerhubbellpublishing.com',
         WHP_DOOR: '/v1/evaluate'
       },
+      proactive: false,
       signer: simulatedSigner,
       fetchImpl: mockFetch
     });
@@ -284,6 +285,70 @@ test('x402 standing-gate unit & regression test suite', async (t) => {
     assert.equal(result.hash, recordHash);
     assert.equal(step, 2);
     assert.ok(paymentSignatureHeader);
+  });
+
+  await t.test('8. Proactive Zero-Handshake M2M (single-roundtrip call #1)', async () => {
+    const { privateKey: edPriv, publicKey: edPub } = crypto.generateKeyPairSync('ed25519');
+    const edPubDer = edPub.export({ format: 'der', type: 'spki' });
+    const edPubRaw = edPubDer.subarray(edPubDer.length - 32);
+    const edPubB64Url = edPubRaw.toString('base64url');
+
+    const expectedRecord = {
+      type: 'WHP-FRONTDOOR-EVALUATION-v1',
+      issuer: 'Wheeler Hubbell Publishing — WHP Standing front door',
+      not_sealed_mark: true,
+      input: { subject: 'test-subject', claim: 'test-claim' },
+      determination: { outcome: 'ESTABLISHED', required_missing: [] }
+    };
+    const recordBytes = Buffer.from(canonical(expectedRecord));
+    const recordHash = crypto.createHash('sha256').update(recordBytes).digest('hex');
+    const sigBytes = crypto.sign(null, recordBytes, edPriv);
+    const sigB64Url = sigBytes.toString('base64url');
+
+    const signedResponse = {
+      record: expectedRecord,
+      record_hash: recordHash,
+      signature: { alg: 'Ed25519', public_key_b64url: edPubB64Url, value_b64url: sigB64Url }
+    };
+
+    let postCallCount = 0;
+    let firstCallHeaders = null;
+
+    const mockFetch = async (url, opts = {}) => {
+      if (opts.method === 'GET' || !opts.method) {
+        return {
+          status: 200,
+          json: async () => ({ signer: { alg: 'Ed25519', public_key_b64url: edPubB64Url } })
+        };
+      }
+      postCallCount++;
+      firstCallHeaders = opts.headers;
+      
+      return {
+        status: 200,
+        text: async () => JSON.stringify(signedResponse),
+        json: async () => signedResponse
+      };
+    };
+
+    const dummySigner = {
+      address: '0x4444444444444444444444444444444444444444',
+      signTypedData: async () => '0x' + '77'.repeat(64) + '1b'
+    };
+
+    const res = await run({
+      env: {
+        WHP_ORIGIN: 'https://api.wheelerhubbellpublishing.com',
+        WHP_DOOR: '/v1/evaluate'
+      },
+      signer: dummySigner,
+      fetchImpl: mockFetch
+    });
+
+    assert.equal(postCallCount, 1, 'Should complete in exactly 1 POST call with zero retries');
+    assert.ok(firstCallHeaders['PAYMENT-SIGNATURE'], 'First call must include PAYMENT-SIGNATURE');
+    assert.equal(res.outcome, 'ESTABLISHED');
+    assert.equal(res.hash, recordHash);
   });
 
   await t.test('7. Rejection paths', async () => {
@@ -295,7 +360,7 @@ test('x402 standing-gate unit & regression test suite', async (t) => {
       json: async () => ({ error: 'Payment required' })
     });
     await assert.rejects(
-      () => run({ env: { WHP_URL: 'https://standing-guard-service.lovable.app' }, fetchImpl: mockFetch402 }),
+      () => run({ env: { WHP_URL: 'https://api.wheelerhubbellpublishing.com' }, fetchImpl: mockFetch402 }),
       /Payment required \(402\)/
     );
 
@@ -328,7 +393,7 @@ test('x402 standing-gate unit & regression test suite', async (t) => {
 
     await assert.rejects(
       () => run({
-        env: { WHP_URL: 'https://standing-guard-service.lovable.app' },
+        env: { WHP_URL: 'https://api.wheelerhubbellpublishing.com' },
         signer: simulatedSigner,
         fetchImpl: mockFetchReject
       }),

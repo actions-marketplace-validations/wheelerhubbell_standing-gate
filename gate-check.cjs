@@ -34,13 +34,13 @@ function parseSpki(pubKeyInput) {
     if (rawB64.length === 44 && rawB64[0] === 0x30) {
       return createPublicKey({ key: rawB64, format: 'der', type: 'spki' });
     }
-  } catch {}
+  } catch (err) { }
   try {
     const rawUrl = Buffer.from(trimmed, 'base64url');
     if (rawUrl.length === 32) {
       return createPublicKey({ key: Buffer.concat([Buffer.from('302a300506032b6570032100', 'hex'), rawUrl]), format: 'der', type: 'spki' });
     }
-  } catch {}
+  } catch (err) { }
   throw Error('Unable to parse Ed25519 public key');
 }
 
@@ -58,7 +58,7 @@ function parseTerms(response, responseBody) {
     try {
       const decoded = Buffer.from(reqHeader, 'base64').toString('utf8');
       return JSON.parse(decoded);
-    } catch {}
+    } catch (err) { }
   }
   if (responseBody && typeof responseBody === 'object') {
     return responseBody;
@@ -205,7 +205,7 @@ function isBase64JsonPayload(str) {
     if (!dec.startsWith('{')) return false;
     const parsed = JSON.parse(dec);
     return !!(parsed && (parsed.x402Version || parsed.payload || parsed.signature));
-  } catch {
+  } catch (err) { 
     return false;
   }
 }
@@ -304,6 +304,38 @@ async function run(options = {}) {
     headers['PAYMENT-SIGNATURE'] = staticPaymentSignature;
   }
 
+  const proactive = options.proactive !== false && env.WHP_PROACTIVE !== "false";
+    // Proactive Zero-Handshake M2M: If signer is provided, pre-sign canonical terms on Call #1
+  if (proactive && activeSigner && !staticCreditToken && !staticPaymentSignature && door === "/v1/evaluate") {
+        try {
+      const canonicalTerms = {
+        accepted: {
+          scheme: "exact",
+          network: "eip155:8453",
+          asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          payTo: "0x1050eddd8282623b0c263ed6bdbd42370bbc28d3",
+          amount: "1000000",
+          extra: { assetTransferMethod: "eip3009", name: "USD Coin", paymentFlow: "authorization", version: "2" },
+          resource: new URL(door, origin).toString()
+        }
+      };
+      let payerAddress = options.payer || (activeSigner && typeof activeSigner === "object" ? activeSigner.address : null);
+      if (!payerAddress && typeof activeSigner === "string" && /^(0x)?[0-9a-fA-F]{64}$/.test(activeSigner)) {
+        const { privateKeyToAccount } = await import("viem/accounts");
+        const key = activeSigner.startsWith("0x") ? activeSigner : "0x" + activeSigner;
+        payerAddress = privateKeyToAccount(key).address;
+      }
+      if (payerAddress) {
+        const prep = prepareAutonomousPayment(canonicalTerms, payerAddress, options);
+        const signature = await signTypedDataPayload(activeSigner, prep);
+        const submission = prep.completePayment(signature);
+        headers["PAYMENT-SIGNATURE"] = formatPaymentSignatureHeader(submission);
+      }
+    } catch (err) { 
+      // Fallback to reactive 402 challenge flow
+    }
+  }
+
   const postUrl = new URL(door, origin);
   let response = await fetchImpl(postUrl, {
     method: 'POST',
@@ -317,7 +349,7 @@ async function run(options = {}) {
   if (response.status === 402) {
     const rawBody = await response.text().catch(() => '');
     let bodyJson = null;
-    try { bodyJson = JSON.parse(rawBody); } catch {}
+    try { bodyJson = JSON.parse(rawBody); } catch (err) { }
 
     if (staticCreditToken || staticPaymentSignature) {
       console.error('Static payment credential refused by service (402):', bodyJson?.error || rawBody);
