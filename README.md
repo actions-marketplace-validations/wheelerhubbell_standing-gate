@@ -51,6 +51,19 @@ A Standing Mark is issued only when the claim is genuinely established under the
 
 Standing Gate connects to the live Standing Mark Service over the published interfaces of the Decision Integrity Protocol.
 
+## Archive and Canonical Boundary
+
+The live canonical machine is:
+
+- Wheeler Hubbell Publishing
+- Decision Integrity Protocol
+- Unilateral Integrity
+- Standing Mark Service
+- Standing Gate
+- Standing Mark / Standing Assessment
+
+Any material not directly connected to this live machine is archival context, not the canonical system.
+
 ## Example Usage
 
 ```yaml
