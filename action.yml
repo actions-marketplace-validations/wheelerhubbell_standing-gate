@@ -5,6 +5,10 @@ branding:
   icon: 'shield'
   color: 'blue'
 inputs:
+  api_key:
+    description: 'WHP Subscription API Key (Developer, Team, or Institutional tier). Bypasses per-call x402 challenge.'
+    required: false
+    default: ''
   service_url:
     description: 'Standing Witness service base URL'
     required: false
@@ -55,6 +59,7 @@ runs:
         WHP_SUBJECT: ${{ inputs.subject }}
         WHP_CLAIM: ${{ inputs.claim }}
         WHP_MOCK: ${{ inputs.mock }}
+        WHP_API_KEY: ${{ inputs.api_key || env.WHP_API_KEY }}
         WHP_PAYMENT: ${{ inputs.payment_signature }}
         WHP_PAYMENT_KEY: ${{ env.WHP_PAYMENT_KEY }}
         WHP_BUYER_KEY: ${{ inputs.buyer_key || env.WHP_BUYER_KEY }}

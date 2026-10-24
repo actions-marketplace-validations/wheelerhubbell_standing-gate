@@ -48,7 +48,16 @@ import { StandingWitnessActionProvider } from "@wheelerhubbell/agentkit";
 ### 3. GitHub Actions CI/CD Circuit Breaker
 Drop into any CI/CD pipeline:
 ```yaml
-- name: Epistemic Standing Check
+# Option A: With WHP Subscription API Key (Developer, Team, or Institutional tier)
+- name: Decision Integrity Gate
+  uses: wheelerhubbell/standing-gate@v0
+  with:
+    subject: "${{ github.repository }}@${{ github.sha }}"
+    claim: "Commit changes adhere strictly to repository invariants"
+    api_key: ${{ secrets.WHP_API_KEY }}
+
+# Option B: With Autonomous Base USDC Wallet (1 USDC / evaluation)
+- name: Decision Integrity Gate (Autonomous x402)
   uses: wheelerhubbell/standing-gate@v0
   with:
     subject: "${{ github.repository }}@${{ github.sha }}"

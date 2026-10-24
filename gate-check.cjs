@@ -287,6 +287,7 @@ async function run(options = {}) {
     }
   };
 
+  const apiKey = (env.WHP_API_KEY || '').trim();
   const { buyerKey, staticCreditToken, staticPaymentSignature } = resolveCredential(env);
   const activeSigner = customSigner || buyerKey;
 
@@ -295,6 +296,12 @@ async function run(options = {}) {
     'Content-Type': 'application/json'
   };
   if (mock) headers['X-Mock'] = 'true';
+
+  // Apply API key if provided
+  if (apiKey) {
+    headers['x-api-key'] = apiKey;
+    headers['Authorization'] = 'Bearer ' + apiKey;
+  }
 
   // Apply pre-formed static credentials if provided
   if (staticCreditToken) {
@@ -458,7 +465,14 @@ async function run(options = {}) {
     }
 
     const outcome = record.determination?.outcome;
-    if (!['RECOGNIZED WITH BOUNDARIES', 'ESTABLISHED'].includes(outcome)) {
+    const positiveOutcomes = [
+      'RECOGNIZED WITH BOUNDARIES',
+      'ESTABLISHED',
+      'ACCEPTED',
+      'BOUNDED_DETERMINATION',
+      'CONDITIONAL_PASS'
+    ];
+    if (!positiveOutcomes.includes(outcome)) {
       throw Error(`Non-positive determination: ${outcome}`);
     }
 
