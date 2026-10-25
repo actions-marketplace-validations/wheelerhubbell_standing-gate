@@ -271,22 +271,45 @@ async function run(options = {}) {
   }
   const door = env.WHP_DOOR || '/v1/evaluate';
   const mock = env.WHP_MOCK === 'true';
+  let provenance = {
+    source: 'github-actions',
+    authority: 'repository-workflow',
+    evidence: [{
+      repository: env.WHP_REPOSITORY || 'wheelerhubbell/standing-gate',
+      sha: env.WHP_SHA || 'head',
+      ref: env.WHP_REF || 'refs/heads/main',
+      actor: env.WHP_ACTOR || 'github-actions',
+      timestamp: new Date().toISOString()
+    }]
+  };
+
+  const rawProv = (env.WHP_PROVENANCE || '').trim();
+  if (rawProv) {
+    try {
+      provenance = JSON.parse(rawProv);
+    } catch {
+      provenance = {
+        source: rawProv,
+        uri: rawProv,
+        authority: 'repository-workflow',
+        evidence: [{
+          repository: env.WHP_REPOSITORY || 'wheelerhubbell/standing-gate',
+          sha: env.WHP_SHA || 'head',
+          ref: env.WHP_REF || 'refs/heads/main',
+          actor: env.WHP_ACTOR || 'github-actions',
+          timestamp: new Date().toISOString()
+        }]
+      };
+    }
+  }
+
   const input = options.input || {
     subject: env.WHP_SUBJECT || 'wheelerhubbell/standing-gate',
     claim: env.WHP_CLAIM || 'Release integrity verification',
-    provenance: {
-      source: 'github-actions',
-      authority: 'repository-workflow',
-      evidence: [{
-        repository: env.WHP_REPOSITORY || 'wheelerhubbell/standing-gate',
-        sha: env.WHP_SHA || 'head',
-        ref: env.WHP_REF || 'refs/heads/main',
-        actor: env.WHP_ACTOR || 'github-actions',
-        timestamp: new Date().toISOString()
-      }]
-    }
+    provenance
   };
 
+  const apiKey = (env.WHP_API_KEY || '').trim();
   const { buyerKey, staticCreditToken, staticPaymentSignature } = resolveCredential(env);
   const activeSigner = customSigner || buyerKey;
 
@@ -295,6 +318,12 @@ async function run(options = {}) {
     'Content-Type': 'application/json'
   };
   if (mock) headers['X-Mock'] = 'true';
+
+  // Apply API key if provided
+  if (apiKey) {
+    headers['x-api-key'] = apiKey;
+    headers['Authorization'] = 'Bearer ' + apiKey;
+  }
 
   // Apply pre-formed static credentials if provided
   if (staticCreditToken) {
@@ -458,7 +487,14 @@ async function run(options = {}) {
     }
 
     const outcome = record.determination?.outcome;
-    if (!['RECOGNIZED WITH BOUNDARIES', 'ESTABLISHED'].includes(outcome)) {
+    const positiveOutcomes = [
+      'RECOGNIZED WITH BOUNDARIES',
+      'ESTABLISHED',
+      'ACCEPTED',
+      'BOUNDED_DETERMINATION',
+      'CONDITIONAL_PASS'
+    ];
+    if (!positiveOutcomes.includes(outcome)) {
       throw Error(`Non-positive determination: ${outcome}`);
     }
 
