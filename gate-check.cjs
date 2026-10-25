@@ -271,20 +271,42 @@ async function run(options = {}) {
   }
   const door = env.WHP_DOOR || '/v1/evaluate';
   const mock = env.WHP_MOCK === 'true';
+  let provenance = {
+    source: 'github-actions',
+    authority: 'repository-workflow',
+    evidence: [{
+      repository: env.WHP_REPOSITORY || 'wheelerhubbell/standing-gate',
+      sha: env.WHP_SHA || 'head',
+      ref: env.WHP_REF || 'refs/heads/main',
+      actor: env.WHP_ACTOR || 'github-actions',
+      timestamp: new Date().toISOString()
+    }]
+  };
+
+  const rawProv = (env.WHP_PROVENANCE || '').trim();
+  if (rawProv) {
+    try {
+      provenance = JSON.parse(rawProv);
+    } catch {
+      provenance = {
+        source: rawProv,
+        uri: rawProv,
+        authority: 'repository-workflow',
+        evidence: [{
+          repository: env.WHP_REPOSITORY || 'wheelerhubbell/standing-gate',
+          sha: env.WHP_SHA || 'head',
+          ref: env.WHP_REF || 'refs/heads/main',
+          actor: env.WHP_ACTOR || 'github-actions',
+          timestamp: new Date().toISOString()
+        }]
+      };
+    }
+  }
+
   const input = options.input || {
     subject: env.WHP_SUBJECT || 'wheelerhubbell/standing-gate',
     claim: env.WHP_CLAIM || 'Release integrity verification',
-    provenance: {
-      source: 'github-actions',
-      authority: 'repository-workflow',
-      evidence: [{
-        repository: env.WHP_REPOSITORY || 'wheelerhubbell/standing-gate',
-        sha: env.WHP_SHA || 'head',
-        ref: env.WHP_REF || 'refs/heads/main',
-        actor: env.WHP_ACTOR || 'github-actions',
-        timestamp: new Date().toISOString()
-      }]
-    }
+    provenance
   };
 
   const apiKey = (env.WHP_API_KEY || '').trim();
