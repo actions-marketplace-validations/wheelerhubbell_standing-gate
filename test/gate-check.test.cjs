@@ -463,4 +463,49 @@ test('x402 standing-gate unit & regression test suite', async (t) => {
       /Payment authorization refused \(HTTP 402\)/
     );
   });
+  await t.test("10. Provenance resolution from WHP_PROVENANCE env or input", async () => {
+    let capturedBody = null;
+    const mockFetch = async (url, opts) => {
+      capturedBody = JSON.parse(opts.body);
+      const record = {
+        type: "WHP-FRONTDOOR-EVALUATION-v1",
+        determination: { outcome: "ESTABLISHED" }
+      };
+      const recBytes = Buffer.from(canonical(record));
+      const record_hash = crypto.createHash("sha256").update(recBytes).digest("hex");
+      return {
+        status: 200,
+        json: async () => ({
+          record,
+          record_hash,
+          signature: { value_b64url: Buffer.from("00".repeat(64), "hex").toString("base64url") }
+        })
+      };
+    };
+
+    // Test URI string provenance
+    await run({
+      env: {
+        WHP_URL: "https://api.wheelerhubbellpublishing.com",
+        WHP_API_KEY: "test_key",
+        WHP_PROVENANCE: "https://github.com/wheelerhubbell/standing-gate/commit/abcdef"
+      },
+      fetchImpl: mockFetch
+    });
+    assert.strictEqual(capturedBody.provenance.uri, "https://github.com/wheelerhubbell/standing-gate/commit/abcdef");
+    assert.strictEqual(capturedBody.provenance.source, "https://github.com/wheelerhubbell/standing-gate/commit/abcdef");
+
+    // Test JSON provenance
+    const customProv = { source: "custom-pipeline", authority: "signer-cert", evidence: [] };
+    await run({
+      env: {
+        WHP_URL: "https://api.wheelerhubbellpublishing.com",
+        WHP_API_KEY: "test_key",
+        WHP_PROVENANCE: JSON.stringify(customProv)
+      },
+      fetchImpl: mockFetch
+    });
+    assert.strictEqual(capturedBody.provenance.source, "custom-pipeline");
+    assert.strictEqual(capturedBody.provenance.authority, "signer-cert");
+  });
 });
