@@ -25,6 +25,10 @@ inputs:
     description: 'Claim to verify or audit'
     required: false
     default: 'CI/CD pipeline release integrity verification'
+  provenance:
+    description: 'Provenance URI or structured evidence payload (string or JSON)'
+    required: false
+    default: ''
   mock:
     description: 'Set to "true" for free dry-run structural verification'
     required: false
@@ -58,6 +62,7 @@ runs:
         WHP_DOOR: ${{ inputs.door }}
         WHP_SUBJECT: ${{ inputs.subject }}
         WHP_CLAIM: ${{ inputs.claim }}
+        WHP_PROVENANCE: ${{ inputs.provenance || env.WHP_PROVENANCE }}
         WHP_MOCK: ${{ inputs.mock }}
         WHP_API_KEY: ${{ inputs.api_key || env.WHP_API_KEY }}
         WHP_PAYMENT: ${{ inputs.payment_signature }}
