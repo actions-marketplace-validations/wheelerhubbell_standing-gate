@@ -1,5 +1,11 @@
 # Standing Gate Canonical Machine
 
+## Whole-system reading rule
+
+Standing Gate is one enforcement component, not the WHP service by itself. Read this repository with the governing text, *Decision Integrity: The Continuous Work*, the other three canonical repositories, and the current live contract at `https://api.wheelerhubbellpublishing.com/v1/contract`. Repository code/configuration and live responses establish implementation; this document defines scope, not proof that every end-to-end path has run.
+
+The gate currently defaults to `/v1/evaluate` (`gate-check.cjs`). Do not conflate that ordinary-agent structural evaluation record with the separate sealed WHP Standing flow at `/v1/evaluations`. A successful gate result does not by itself prove a sealed Standing Mark issuance, finalized payment, subscription entitlement, or end-to-end settlement. Verify the exact path and evidence before making those claims.
+
 This repository is not a general-purpose archive. It is the live enforcement layer for the Wheeler Hubbell Publishing decision-integrity system.
 
 The live canonical machine is exactly this:
