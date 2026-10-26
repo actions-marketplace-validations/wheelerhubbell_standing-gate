@@ -17,7 +17,7 @@ The canonical architecture is:
 
 ## Ingress & Authentication Rails
 
-1. **Commercial Subscription Rails (Developer $149/mo, Team $699/mo, Institutional $3,500/mo):**
+1. **Commercial Subscription Rails (Developer Sentinel 49/mo [200 evaluations/mo], Team CI/CD Gateway 99/mo [1,000 evaluations/mo], Institutional Sovereign ,500/mo [6,000 evaluations/mo]):**
    - Provide your provisioned API key via `api_key: ${{ secrets.WHP_API_KEY }}` or environment `WHP_API_KEY`.
 2. **Autonomous M2M Micropayment Rail (Agent-to-Agent):**
    - 1 Base USDC via x402 challenge and dynamic EIP-3009 transfer authorization.
