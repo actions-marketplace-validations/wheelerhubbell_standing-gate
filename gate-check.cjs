@@ -260,6 +260,68 @@ async function signTypedDataPayload(signerOrKey, prep) {
   throw Error('No supported signer available to sign EIP-3009 TransferWithAuthorization');
 }
 
+
+function parseStructuredInput(raw, label = 'WHP_INPUT_JSON') {
+  if (!raw || !String(raw).trim()) return null;
+  let value;
+  try {
+    value = JSON.parse(String(raw));
+  } catch (error) {
+    throw Error(`${label} must contain valid JSON: ${error.message}`);
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw Error(`${label} must be a JSON object matching the evaluation request contract`);
+  }
+  return value;
+}
+
+function formatAdjudicationReport(record, signature, recordHash, signatureStatus, disposition) {
+  const lines = [
+    '## Decision Integrity Examination',
+    '',
+    '### Submitted examination',
+    '```json',
+    JSON.stringify(record.input ?? null, null, 2),
+    '```',
+    '',
+    '### Evaluator determination (verbatim record content)',
+    '```json',
+    JSON.stringify(record.determination ?? null, null, 2),
+    '```',
+    '',
+    '### Record integrity',
+    `- Record type: \`${record.type || 'not supplied'}\``,
+    `- Record hash (SHA-256 of canonical record): \`${recordHash}\``,
+    `- Signature algorithm: \`${signature?.alg || 'not supplied'}\``,
+    `- Signature public key: \`${signature?.public_key_b64url || 'not supplied'}\``,
+    `- Signature check: **${signatureStatus}**`,
+    '- Verification endpoint: https://api.wheelerhubbellpublishing.com/v1/verification',
+    '',
+    '### Client reception (separate from the examination)',
+    `- Workflow disposition: **${disposition}**`,
+    '- This is a client-side reception event. It does not alter, extend, or authenticate the signed examination record.',
+    '- The workflow allowlist is not a statement that consequential action is authorized.',
+    ''
+  ];
+  return lines.join('\n');
+}
+
+function makeReceptionEvent(recordHash, outcome, continued) {
+  return {
+    type: 'WHP-CLIENT-RECEPTION-EVENT-v1',
+    received_at: new Date().toISOString(),
+    examination_record_hash: recordHash,
+    examination_outcome: outcome ?? null,
+    workflow_disposition: continued ? 'CONTINUED_BY_CONFIGURED_OUTCOME_ALLOWLIST' : 'BLOCKED_BY_CONFIGURED_OUTCOME_ALLOWLIST',
+    authority_boundary: 'Client workflow disposition only; not evaluator authorization and not a mutation of the examination record.'
+  };
+}
+
+function appendMultilineOutput(filePath, name, value) {
+  const delimiter = `WHP_${name}_${randomBytes(12).toString('hex')}`;
+  fs.appendFileSync(filePath, `${name}<<${delimiter}\n${value}\n${delimiter}\n`);
+}
+
 async function run(options = {}) {
   const env = options.env || process.env;
   const fetchImpl = options.fetchImpl || globalThis.fetch;
@@ -303,7 +365,8 @@ async function run(options = {}) {
     }
   }
 
-  const input = options.input || {
+  const structuredInput = options.input ?? parseStructuredInput(env.WHP_INPUT_JSON, 'WHP_INPUT_JSON');
+  const input = structuredInput || {
     subject: env.WHP_SUBJECT || 'wheelerhubbell/standing-gate',
     claim: env.WHP_CLAIM || 'Release integrity verification',
     provenance
@@ -479,12 +542,20 @@ async function run(options = {}) {
     const computedHash = createHash('sha256').update(bytes).digest('hex');
     if (computedHash !== record_hash) throw Error('Record hash mismatch');
 
-    if (signingKeyObj) {
-      const sigBytes = decodeB64Url(signature.value_b64url, 64);
-      if (!verify(null, bytes, signingKeyObj, sigBytes)) {
-        throw Error('Ed25519 signature verification failed');
-      }
+    if (!signingKeyObj) {
+      throw Error('Could not obtain the live /v1/evaluate issuer key; refusing to label the examination signature verified');
     }
+    const embeddedKey = parseSpki(signature.public_key_b64url);
+    const expectedRaw = signingKeyObj.export({ format: 'der', type: 'spki' }).subarray(-32);
+    const embeddedRaw = embeddedKey.export({ format: 'der', type: 'spki' }).subarray(-32);
+    if (!expectedRaw.equals(embeddedRaw)) {
+      throw Error('Record signer does not match the live /v1/evaluate issuer key');
+    }
+    const sigBytes = decodeB64Url(signature.value_b64url, 64);
+    if (!verify(null, bytes, signingKeyObj, sigBytes)) {
+      throw Error('Ed25519 signature verification failed');
+    }
+    const signatureStatus = 'VERIFIED_AGAINST_LIVE_DISCOVERY_KEY';
 
     const outcome = record.determination?.outcome;
     const positiveOutcomes = [
@@ -498,12 +569,24 @@ async function run(options = {}) {
       throw Error(`Non-positive determination: ${outcome}`);
     }
 
-    console.log(`STANDING_ESTABLISHED: outcome=${outcome}`);
+    const continued = positiveOutcomes.includes(outcome);
+    const reception = makeReceptionEvent(record_hash, outcome, continued);
+    const report = formatAdjudicationReport(record, signature, record_hash, signatureStatus, reception.workflow_disposition);
+    console.log(`WHP_EVALUATION_RECEIVED: outcome=${outcome}; workflow=${continued ? 'continued' : 'blocked'}`);
     console.log(`RECORD_HASH: ${record_hash}`);
-    if (env.GITHUB_OUTPUT) {
-      fs.appendFileSync(env.GITHUB_OUTPUT, `outcome=${outcome}\nhash=${record_hash}\n`);
+    console.log(report);
+
+    if (env.GITHUB_STEP_SUMMARY) {
+      fs.appendFileSync(env.GITHUB_STEP_SUMMARY, report + '\n');
     }
-    return { outcome, hash: record_hash, record };
+    if (env.GITHUB_OUTPUT) {
+      fs.appendFileSync(env.GITHUB_OUTPUT, `outcome=${outcome}\nhash=${record_hash}\nsignature_status=${signatureStatus}\nworkflow_disposition=${continued ? 'continued' : 'blocked'}\n`);
+      appendMultilineOutput(env.GITHUB_OUTPUT, 'record_json', JSON.stringify(data, null, 2));
+      appendMultilineOutput(env.GITHUB_OUTPUT, 'reception_event_json', JSON.stringify(reception, null, 2));
+    }
+
+    if (!continued) throw Error(`Non-positive determination: ${outcome}`);
+    return { outcome, hash: record_hash, record, signature, signatureStatus, reception, report };
   }
 
   // Format 2: Sealed WHP-STANDING-MARK-v2 / WHP-STANDING-RESULT-v2
@@ -555,5 +638,8 @@ module.exports = {
   formatPaymentSignatureHeader,
   resolveCredential,
   signTypedDataPayload,
+  parseStructuredInput,
+  formatAdjudicationReport,
+  makeReceptionEvent,
   run
 };
