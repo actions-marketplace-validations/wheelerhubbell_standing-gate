@@ -260,6 +260,98 @@ async function signTypedDataPayload(signerOrKey, prep) {
   throw Error('No supported signer available to sign EIP-3009 TransferWithAuthorization');
 }
 
+
+function parseStructuredInput(raw, label = 'WHP_INPUT_JSON') {
+  if (!raw || !String(raw).trim()) return null;
+  let value;
+  try {
+    value = JSON.parse(String(raw));
+  } catch (error) {
+    throw Error(`${label} must contain valid JSON: ${error.message}`);
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw Error(`${label} must be a JSON object matching the evaluation request contract`);
+  }
+  return value;
+}
+
+function formatAdjudicationReport(record, signature, recordHash, signatureStatus, disposition, continuity) {
+  const lines = [
+    '## Decision Integrity Examination',
+    '',
+    '### Submitted examination',
+    '```json',
+    JSON.stringify(record.input ?? null, null, 2),
+    '```',
+    '',
+    '### Evaluator determination (verbatim record content)',
+    '```json',
+    JSON.stringify(record.determination ?? null, null, 2),
+    '```',
+    ''
+  ];
+
+  if (continuity && (continuity.status || continuity.prior_record_hash)) {
+    lines.push(
+      '### Successive examination and continuity',
+      `- Lineage status: **${continuity.status || 'UNSPECIFIED'}**`,
+      `- Prior examination record hash: \`${continuity.prior_record_hash || record.prior_record_hash || 'none'}\``,
+      `- Source object identity preserved: **${continuity.source_object_carried_forward ? 'Yes' : continuity.source_object_comparison?.identity_preserved ? 'Yes' : 'No'}**`,
+      `- Prior record preserved immutable: **${continuity.prior_record_preserved ? 'Yes' : 'N/A'}**`,
+      `- New evidence introduced: ${Array.isArray(continuity.new_evidence_introduced) ? continuity.new_evidence_introduced.length : 0}`
+    );
+    if (Array.isArray(continuity.new_evidence_introduced) && continuity.new_evidence_introduced.length > 0) {
+      for (const item of continuity.new_evidence_introduced) {
+        lines.push(`  * \`${typeof item === 'string' ? item : JSON.stringify(item)}\``);
+      }
+    }
+    if (continuity.changed_conditions) {
+      lines.push(
+        `- Changed conditions: added=${Array.isArray(continuity.changed_conditions.added) ? continuity.changed_conditions.added.length : 0}, dropped=${Array.isArray(continuity.changed_conditions.dropped) ? continuity.changed_conditions.dropped.length : 0}`
+      );
+    }
+    if (Array.isArray(continuity.prior_unknowns_addressed) && continuity.prior_unknowns_addressed.length > 0) {
+      lines.push(`- Prior unknowns resolved by new evidence: ${continuity.prior_unknowns_addressed.join(', ')}`);
+    }
+    lines.push('');
+  }
+
+  lines.push(
+    '### Record integrity',
+    `- Record type: \`${record.type || 'not supplied'}\``,
+    `- Record hash (SHA-256 of canonical record): \`${recordHash}\``,
+    `- Signature algorithm: \`${signature?.alg || 'not supplied'}\``,
+    `- Signature public key: \`${signature?.public_key_b64url || 'not supplied'}\``,
+    `- Signature check: **${signatureStatus}**`,
+    '- Verification endpoint: https://api.wheelerhubbellpublishing.com/v1/verification',
+    '',
+    '### Client reception (separate from the examination)',
+    `- Workflow disposition: **${disposition}**`,
+    '- This is a client-side reception event. It does not alter, extend, or authenticate the signed examination record.',
+    '- The workflow allowlist is not a statement that consequential action is authorized.',
+    ''
+  );
+  return lines.join('\n');
+}
+
+function makeReceptionEvent(recordHash, outcome, continued, continuity) {
+  return {
+    type: 'WHP-CLIENT-RECEPTION-EVENT-v1',
+    received_at: new Date().toISOString(),
+    examination_record_hash: recordHash,
+    prior_examination_record_hash: continuity?.prior_record_hash ?? null,
+    continuity_status: continuity?.status ?? null,
+    examination_outcome: outcome ?? null,
+    workflow_disposition: continued ? 'CONTINUED_BY_CONFIGURED_OUTCOME_ALLOWLIST' : 'BLOCKED_BY_CONFIGURED_OUTCOME_ALLOWLIST',
+    authority_boundary: 'Client workflow disposition only; not evaluator authorization and not a mutation of the examination record.'
+  };
+}
+
+function appendMultilineOutput(filePath, name, value) {
+  const delimiter = `WHP_${name}_${randomBytes(12).toString('hex')}`;
+  fs.appendFileSync(filePath, `${name}<<${delimiter}\n${value}\n${delimiter}\n`);
+}
+
 async function run(options = {}) {
   const env = options.env || process.env;
   const fetchImpl = options.fetchImpl || globalThis.fetch;
@@ -303,11 +395,32 @@ async function run(options = {}) {
     }
   }
 
-  const input = options.input || {
-    subject: env.WHP_SUBJECT || 'wheelerhubbell/standing-gate',
-    claim: env.WHP_CLAIM || 'Release integrity verification',
-    provenance
-  };
+  const structuredInput = options.input ?? parseStructuredInput(env.WHP_INPUT_JSON, 'WHP_INPUT_JSON');
+  const priorRecordHash = (options.priorRecordHash || env.WHP_PRIOR_RECORD_HASH || env.INPUT_PRIOR_RECORD_HASH || '').trim();
+  const rawPriorRecord = (options.priorRecord || env.WHP_PRIOR_RECORD_JSON || env.INPUT_PRIOR_RECORD_JSON || '');
+  let priorRecordObj = null;
+  if (rawPriorRecord) {
+    try {
+      priorRecordObj = typeof rawPriorRecord === 'string' ? JSON.parse(rawPriorRecord.trim()) : rawPriorRecord;
+    } catch (e) {
+      throw Error(`Failed to parse prior_record JSON: ${e.message}`);
+    }
+  }
+
+  let input = structuredInput
+    ? { ...structuredInput }
+    : {
+        subject: env.WHP_SUBJECT || 'wheelerhubbell/standing-gate',
+        claim: env.WHP_CLAIM || 'Release integrity verification',
+        provenance
+      };
+
+  if (priorRecordHash && !input.prior_record_hash && !input.continuity?.prior_record_hash) {
+    input.prior_record_hash = priorRecordHash;
+  }
+  if (priorRecordObj && !input.prior_record) {
+    input.prior_record = priorRecordObj;
+  }
 
   const apiKey = (env.WHP_API_KEY || '').trim();
   const { buyerKey, staticCreditToken, staticPaymentSignature } = resolveCredential(env);
@@ -479,12 +592,20 @@ async function run(options = {}) {
     const computedHash = createHash('sha256').update(bytes).digest('hex');
     if (computedHash !== record_hash) throw Error('Record hash mismatch');
 
-    if (signingKeyObj) {
-      const sigBytes = decodeB64Url(signature.value_b64url, 64);
-      if (!verify(null, bytes, signingKeyObj, sigBytes)) {
-        throw Error('Ed25519 signature verification failed');
-      }
+    if (!signingKeyObj) {
+      throw Error('Could not obtain the live /v1/evaluate issuer key; refusing to label the examination signature verified');
     }
+    const embeddedKey = parseSpki(signature.public_key_b64url);
+    const expectedRaw = signingKeyObj.export({ format: 'der', type: 'spki' }).subarray(-32);
+    const embeddedRaw = embeddedKey.export({ format: 'der', type: 'spki' }).subarray(-32);
+    if (!expectedRaw.equals(embeddedRaw)) {
+      throw Error('Record signer does not match the live /v1/evaluate issuer key');
+    }
+    const sigBytes = decodeB64Url(signature.value_b64url, 64);
+    if (!verify(null, bytes, signingKeyObj, sigBytes)) {
+      throw Error('Ed25519 signature verification failed');
+    }
+    const signatureStatus = 'VERIFIED_AGAINST_LIVE_DISCOVERY_KEY';
 
     const outcome = record.determination?.outcome;
     const positiveOutcomes = [
@@ -498,12 +619,33 @@ async function run(options = {}) {
       throw Error(`Non-positive determination: ${outcome}`);
     }
 
-    console.log(`STANDING_ESTABLISHED: outcome=${outcome}`);
+    const continuity =
+      record.determination?.standing_record?.continuity ||
+      record.determination?.reasoning_environment?.continuity ||
+      record.continuity ||
+      (record.prior_record_hash ? { status: 'PRIOR_RECORD_REFERENCED', prior_record_hash: record.prior_record_hash } : null);
+
+    const continued = positiveOutcomes.includes(outcome);
+    const reception = makeReceptionEvent(record_hash, outcome, continued, continuity);
+    const report = formatAdjudicationReport(record, signature, record_hash, signatureStatus, reception.workflow_disposition, continuity);
+    console.log(`WHP_EVALUATION_RECEIVED: outcome=${outcome}; workflow=${continued ? 'continued' : 'blocked'}`);
     console.log(`RECORD_HASH: ${record_hash}`);
-    if (env.GITHUB_OUTPUT) {
-      fs.appendFileSync(env.GITHUB_OUTPUT, `outcome=${outcome}\nhash=${record_hash}\n`);
+    if (continuity?.status) {
+      console.log(`CONTINUITY_STATUS: ${continuity.status} (prior: ${continuity.prior_record_hash || 'none'})`);
     }
-    return { outcome, hash: record_hash, record };
+    console.log(report);
+
+    if (env.GITHUB_STEP_SUMMARY) {
+      fs.appendFileSync(env.GITHUB_STEP_SUMMARY, report + '\n');
+    }
+    if (env.GITHUB_OUTPUT) {
+      fs.appendFileSync(env.GITHUB_OUTPUT, `outcome=${outcome}\nhash=${record_hash}\nsignature_status=${signatureStatus}\nworkflow_disposition=${continued ? 'continued' : 'blocked'}\nprior_record_hash=${continuity?.prior_record_hash || ''}\ncontinuity_status=${continuity?.status || ''}\n`);
+      appendMultilineOutput(env.GITHUB_OUTPUT, 'record_json', JSON.stringify(data, null, 2));
+      appendMultilineOutput(env.GITHUB_OUTPUT, 'reception_event_json', JSON.stringify(reception, null, 2));
+    }
+
+    if (!continued) throw Error(`Non-positive determination: ${outcome}`);
+    return { outcome, hash: record_hash, record, signature, signatureStatus, reception, report, continuity };
   }
 
   // Format 2: Sealed WHP-STANDING-MARK-v2 / WHP-STANDING-RESULT-v2
@@ -555,5 +697,8 @@ module.exports = {
   formatPaymentSignatureHeader,
   resolveCredential,
   signTypedDataPayload,
+  parseStructuredInput,
+  formatAdjudicationReport,
+  makeReceptionEvent,
   run
 };
