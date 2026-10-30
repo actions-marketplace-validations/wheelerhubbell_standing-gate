@@ -29,6 +29,10 @@ inputs:
     description: 'Provenance URI or structured evidence payload (string or JSON)'
     required: false
     default: ''
+  structured_input:
+    description: 'Complete JSON request body for /v1/evaluate; use the production route contract and optional evaluator fields as supported.'
+    required: false
+    default: ''
   mock:
     description: 'Set to "true" for free dry-run structural verification'
     required: false
@@ -46,8 +50,17 @@ outputs:
     description: 'Evaluation determination outcome'
     value: ${{ steps.gate.outputs.outcome }}
   record_hash:
-    description: 'Cryptographic hash of the signed evaluation record'
+    description: 'SHA-256 hash of the canonical signed evaluation record'
     value: ${{ steps.gate.outputs.hash }}
+  record_json:
+    description: 'Complete signed evaluation response envelope returned by the service'
+    value: ${{ steps.gate.outputs.record_json }}
+  signature_status:
+    description: 'Signature verification result against the key from live evaluation discovery'
+    value: ${{ steps.gate.outputs.signature_status }}
+  reception_event_json:
+    description: 'Separate client reception event; does not mutate the evaluation record'
+    value: ${{ steps.gate.outputs.reception_event_json }}
 
 runs:
   using: 'composite'
@@ -63,6 +76,7 @@ runs:
         WHP_SUBJECT: ${{ inputs.subject }}
         WHP_CLAIM: ${{ inputs.claim }}
         WHP_PROVENANCE: ${{ inputs.provenance || env.WHP_PROVENANCE }}
+        WHP_INPUT_JSON: ${{ inputs.structured_input }}
         WHP_MOCK: ${{ inputs.mock }}
         WHP_API_KEY: ${{ inputs.api_key || env.WHP_API_KEY }}
         WHP_PAYMENT: ${{ inputs.payment_signature }}
