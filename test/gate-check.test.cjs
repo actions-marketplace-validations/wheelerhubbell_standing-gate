@@ -551,4 +551,65 @@ test('x402 standing-gate unit & regression test suite', async (t) => {
     assert.equal(res.record.determination.lawful_unknowns[0].id, 'u-1');
     assert.match(res.report, /UNKNOWN_BLOCKING_FOR_REQUESTED_OPERATION/);
   });
+  await t.test('12. Successive examination continuity carried forward and displayed in report', async () => {
+    const { privateKey, publicKey } = crypto.generateKeyPairSync('ed25519');
+    const pubRaw = publicKey.export({ format: 'der', type: 'spki' }).subarray(-32);
+    const pubB64 = pubRaw.toString('base64url');
+    const priorHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+
+    let posted;
+    const mockFetch = async (url, opts = {}) => {
+      if (opts.method !== 'POST') return { status: 200, json: async () => ({ signer: { public_key_b64url: pubB64 } }) };
+      posted = JSON.parse(opts.body);
+      const record = {
+        type: 'WHP-FRONTDOOR-EVALUATION-v1',
+        input: posted,
+        prior_record_hash: priorHash,
+        determination: {
+          outcome: 'BOUNDED_DETERMINATION',
+          standing_record: {
+            continuity: {
+              status: 'SUCCESSIVE_LINEAGE_ESTABLISHED',
+              prior_record_hash: priorHash,
+              source_object_carried_forward: true,
+              prior_record_preserved: true,
+              new_evidence_introduced: ['Additional Audit Clearance #2026-B'],
+              changed_conditions: { added: ['Audit Clearance Attached'], dropped: [] },
+              prior_unknowns_addressed: ['Unverified Audit Compliance']
+            }
+          }
+        }
+      };
+      const bytes = Buffer.from(canonical(record));
+      return {
+        status: 200,
+        json: async () => ({
+          record,
+          record_hash: crypto.createHash('sha256').update(bytes).digest('hex'),
+          signature: { alg: 'Ed25519', public_key_b64url: pubB64, value_b64url: crypto.sign(null, bytes, privateKey).toString('base64url') }
+        })
+      };
+    };
+
+    const res = await run({
+      env: {
+        WHP_URL: 'https://api.wheelerhubbellpublishing.com',
+        WHP_API_KEY: 'test',
+        WHP_PROACTIVE: 'false',
+        WHP_PRIOR_RECORD_HASH: priorHash,
+        WHP_CLAIM: 'Successive examination claim'
+      },
+      fetchImpl: mockFetch
+    });
+
+    assert.equal(posted.prior_record_hash, priorHash);
+    assert.equal(res.continuity.status, 'SUCCESSIVE_LINEAGE_ESTABLISHED');
+    assert.equal(res.continuity.prior_record_hash, priorHash);
+    assert.equal(res.continuity.source_object_carried_forward, true);
+    assert.equal(res.reception.prior_examination_record_hash, priorHash);
+    assert.equal(res.reception.continuity_status, 'SUCCESSIVE_LINEAGE_ESTABLISHED');
+    assert.match(res.report, /### Successive examination and continuity/);
+    assert.match(res.report, /SUCCESSIVE_LINEAGE_ESTABLISHED/);
+    assert.match(res.report, /Additional Audit Clearance #2026-B/);
+  });
 });
