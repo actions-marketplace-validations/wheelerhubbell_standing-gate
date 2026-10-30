@@ -465,25 +465,32 @@ test('x402 standing-gate unit & regression test suite', async (t) => {
   });
   await t.test("10. Provenance resolution from WHP_PROVENANCE env or input", async () => {
     let capturedBody = null;
-    const mockFetch = async (url, opts) => {
+    const { privateKey, publicKey } = crypto.generateKeyPairSync('ed25519');
+    const pubRaw = publicKey.export({ format: 'der', type: 'spki' }).subarray(-32);
+    const pubB64 = pubRaw.toString('base64url');
+    const mockFetch = async (url, opts = {}) => {
+      if (opts.method !== 'POST') {
+        return { status: 200, json: async () => ({ signer: { public_key_b64url: pubB64 } }) };
+      }
       capturedBody = JSON.parse(opts.body);
       const record = {
         type: "WHP-FRONTDOOR-EVALUATION-v1",
+        input: capturedBody,
         determination: { outcome: "ESTABLISHED" }
       };
       const recBytes = Buffer.from(canonical(record));
       const record_hash = crypto.createHash("sha256").update(recBytes).digest("hex");
+      const signature = crypto.sign(null, recBytes, privateKey).toString('base64url');
       return {
         status: 200,
         json: async () => ({
           record,
           record_hash,
-          signature: { value_b64url: Buffer.from("00".repeat(64), "hex").toString("base64url") }
+          signature: { alg: 'Ed25519', public_key_b64url: pubB64, value_b64url: signature }
         })
       };
     };
 
-    // Test URI string provenance
     await run({
       env: {
         WHP_URL: "https://api.wheelerhubbellpublishing.com",
@@ -495,7 +502,6 @@ test('x402 standing-gate unit & regression test suite', async (t) => {
     assert.strictEqual(capturedBody.provenance.uri, "https://github.com/wheelerhubbell/standing-gate/commit/abcdef");
     assert.strictEqual(capturedBody.provenance.source, "https://github.com/wheelerhubbell/standing-gate/commit/abcdef");
 
-    // Test JSON provenance
     const customProv = { source: "custom-pipeline", authority: "signer-cert", evidence: [] };
     await run({
       env: {
@@ -507,5 +513,42 @@ test('x402 standing-gate unit & regression test suite', async (t) => {
     });
     assert.strictEqual(capturedBody.provenance.source, "custom-pipeline");
     assert.strictEqual(capturedBody.provenance.authority, "signer-cert");
+  });
+
+  await t.test('11. Structured input passes through exactly and record/reception remain separate', async () => {
+    const { privateKey, publicKey } = crypto.generateKeyPairSync('ed25519');
+    const pubRaw = publicKey.export({ format: 'der', type: 'spki' }).subarray(-32);
+    const pubB64 = pubRaw.toString('base64url');
+    const input = {
+      subject: 'artifact:test', claim: 'staging only', operation: 'COPY',
+      proposed_output: { claim: 'staging only' },
+      provenance: { source: 'fixture', evidence: [{ id: 'source-1' }] },
+      transitions: [{ id: 'transition-1' }], relations: [{ type: 'COPY' }],
+      correction: { supersedes: 'prior-record' }
+    };
+    let posted;
+    const mockFetch = async (url, opts = {}) => {
+      if (opts.method !== 'POST') return { status: 200, json: async () => ({ signer: { public_key_b64url: pubB64 } }) };
+      posted = JSON.parse(opts.body);
+      const record = {
+        type: 'WHP-FRONTDOOR-EVALUATION-v1', input: posted,
+        determination: { outcome: 'BOUNDED_DETERMINATION', lawful_unknowns: [{ id: 'u-1', standing: 'UNKNOWN_BLOCKING_FOR_REQUESTED_OPERATION' }] }
+      };
+      const bytes = Buffer.from(canonical(record));
+      return { status: 200, json: async () => ({
+        record, record_hash: crypto.createHash('sha256').update(bytes).digest('hex'),
+        signature: { alg: 'Ed25519', public_key_b64url: pubB64, value_b64url: crypto.sign(null, bytes, privateKey).toString('base64url') }
+      }) };
+    };
+    const res = await run({
+      env: { WHP_URL: 'https://api.wheelerhubbellpublishing.com', WHP_API_KEY: 'test', WHP_PROACTIVE: 'false' },
+      input, fetchImpl: mockFetch
+    });
+    assert.deepEqual(posted, input);
+    assert.deepEqual(res.record.input, input);
+    assert.equal(res.signatureStatus, 'VERIFIED_AGAINST_LIVE_DISCOVERY_KEY');
+    assert.equal(res.reception.examination_record_hash, res.hash);
+    assert.equal(res.record.determination.lawful_unknowns[0].id, 'u-1');
+    assert.match(res.report, /UNKNOWN_BLOCKING_FOR_REQUESTED_OPERATION/);
   });
 });
